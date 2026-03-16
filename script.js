@@ -1,4 +1,4 @@
-// script.js - VERSI SEMUA BISA DRAG + FIX ANDROID
+// script.js - VERSI FINAL (Semua Bisa Drag + Fix Android)
 import { database } from './firebase-config.js';
 import { ref, push, onChildAdded, onChildChanged, onChildRemoved, set, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
@@ -7,16 +7,6 @@ const COLOR_PALETTE = [
     '#E76F51', '#F4A261', '#E9C46A', '#6A994E', '#A7C957',
     '#BC4C5C', '#5E548E', '#3D5A80', '#98C1D9', '#EE6C4D'
 ];
-
-// ========== KONFIGURASI UKURAN ==========
-function getBallRadius() {
-    if (!canvas) return 30;
-    const width = canvas.width;
-    if (width < 400) return 25;
-    if (width < 700) return 30;
-    if (width < 1000) return 32;
-    return 35;
-}
 
 // ========== STATE ==========
 let balls = new Map();
@@ -27,15 +17,18 @@ let draggedBall = null;
 let dragOffsetX, dragOffsetY;
 let isDragging = false;
 let popupTimeout = null;
+let lastPopupTime = 0; // Buat anti double popup
 let myBallId = null;
 let myUsername = '';
 
-// ========== INIT ==========
+// ========== INIT SAAT HALAMAN SIAP ==========
 document.addEventListener('DOMContentLoaded', () => {
     if (window.location.hostname !== 'localhost') {
         console.log = function() {};
         console.warn = function() {};
+        console.error = function() {};
     }
+    
     initApp();
 });
 
@@ -79,7 +72,7 @@ function saveUserData() {
     }));
 }
 
-// ========== COLOR OPTIONS ==========
+// ========== SETUP WARNA ==========
 function initColorOptions() {
     const container = document.getElementById('colorOptions');
     if (!container) return;
@@ -97,8 +90,10 @@ function initColorOptions() {
         dot.style.display = 'inline-block';
         dot.style.margin = '5px';
         dot.style.border = index === 0 ? '3px solid white' : '2px solid transparent';
+        dot.dataset.color = color;
         
-        dot.addEventListener('click', () => {
+        dot.addEventListener('click', (e) => {
+            e.preventDefault();
             document.querySelectorAll('.color-dot').forEach(d => {
                 d.style.border = '2px solid transparent';
                 d.classList.remove('selected');
@@ -112,7 +107,7 @@ function initColorOptions() {
     });
 }
 
-// ========== CANVAS ==========
+// ========== SETUP CANVAS ==========
 function initCanvas() {
     canvas = document.getElementById('bolaCanvas');
     if (!canvas) return;
@@ -130,19 +125,17 @@ function resizeCanvas() {
     if (!canvas || !canvas.parentElement) return;
     const container = canvas.parentElement;
     const rect = container.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    canvas.width = rect.width || 800;
+    canvas.height = rect.height || 500;
 }
 
 function repositionBalls() {
     if (!canvas) return;
-    const radius = getBallRadius();
     balls.forEach((ball) => {
-        if (ball.x > canvas.width - radius) ball.x = canvas.width - radius;
-        if (ball.x < radius) ball.x = radius;
-        if (ball.y > canvas.height - radius) ball.y = canvas.height - radius;
-        if (ball.y < radius) ball.y = radius;
+        if (ball.x > canvas.width - 30) ball.x = canvas.width - 30;
+        if (ball.x < 30) ball.x = 30;
+        if (ball.y > canvas.height - 30) ball.y = canvas.height - 30;
+        if (ball.y < 30) ball.y = 30;
     });
 }
 
@@ -169,24 +162,24 @@ async function initFirebaseListeners() {
             const ball = snapshot.val();
             const ballId = snapshot.key;
             
-            if (!ball || balls.has(ballId)) return;
+            if (!ball) return;
+            if (balls.has(ballId)) return;
             
             if (ball.userName === myUsername && !myBallId) {
                 myBallId = ballId;
                 saveUserData();
             }
             
-            const radius = getBallRadius();
             const newBall = {
                 id: ballId,
                 userName: ball.userName || 'Anonim',
                 message: ball.message || '...',
                 color: ball.color || COLOR_PALETTE[0],
                 timestamp: ball.timestamp || Date.now(),
-                x: ball.x && !isNaN(ball.x) && ball.x > 0 ? ball.x : Math.random() * (canvas.width - 2*radius) + radius,
-                y: ball.y && !isNaN(ball.y) && ball.y > 0 ? ball.y : Math.random() * (canvas.height - 2*radius) + radius,
-                vx: ball.vx || (Math.random() - 0.5) * 0.2,
-                vy: ball.vy || (Math.random() - 0.5) * 0.2,
+                x: ball.x && !isNaN(ball.x) && ball.x > 0 ? ball.x : Math.random() * (canvas.width - 100) + 50,
+                y: ball.y && !isNaN(ball.y) && ball.y > 0 ? ball.y : Math.random() * (canvas.height - 100) + 50,
+                vx: ball.vx || (Math.random() - 0.5) * 0.3,
+                vy: ball.vy || (Math.random() - 0.5) * 0.3,
                 isMine: ball.userName === myUsername
             };
             
@@ -234,10 +227,12 @@ function updateButtonState(hasBall) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-check"></i> KAMU UDAH PUNYA BOLA';
         btn.style.backgroundColor = '#6A994E';
+        btn.style.boxShadow = '0 4px 0 #3a5e2c';
     } else {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-rocket"></i> LEMPER BOLAKU!';
         btn.style.backgroundColor = '#e76f51';
+        btn.style.boxShadow = '0 6px 0 #aa4e38';
     }
 }
 
@@ -260,9 +255,8 @@ function lemperBola() {
     
     if (!canvas) resizeCanvas();
     
-    const radius = getBallRadius();
-    const randomX = Math.floor(Math.random() * (canvas.width - 2*radius)) + radius;
-    const randomY = Math.floor(Math.random() * (canvas.height - 2*radius)) + radius;
+    const randomX = Math.floor(Math.random() * (canvas.width - 100)) + 50;
+    const randomY = Math.floor(Math.random() * (canvas.height - 100)) + 50;
     
     const newBall = {
         userName: username,
@@ -271,8 +265,8 @@ function lemperBola() {
         timestamp: Date.now(),
         x: randomX,
         y: randomY,
-        vx: (Math.random() - 0.5) * 0.2,
-        vy: (Math.random() - 0.5) * 0.2
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3
     };
     
     const ballsRef = ref(database, 'balls');
@@ -294,6 +288,7 @@ function showNotification(text, duration) {
     if (oldNotif) oldNotif.remove();
     
     const notif = document.createElement('div');
+    notif.className = 'notification';
     notif.style.position = 'fixed';
     notif.style.top = '20px';
     notif.style.left = '50%';
@@ -305,6 +300,7 @@ function showNotification(text, duration) {
     notif.style.border = '2px solid #e76f51';
     notif.style.zIndex = '9999';
     notif.style.fontWeight = 'bold';
+    notif.style.boxShadow = '0 10px 20px rgba(0,0,0,0.3)';
     notif.innerText = text;
     
     document.body.appendChild(notif);
@@ -330,78 +326,71 @@ function startAnimation() {
 function updateBalls() {
     if (!canvas) return;
     
-    const radius = getBallRadius();
-    
     balls.forEach((ball) => {
         if (!draggedBall || draggedBall.id !== ball.id) {
-            ball.x += ball.vx;
-            ball.y += ball.vy;
+            ball.x += ball.vx || 0;
+            ball.y += ball.vy || 0;
         }
         
+        const radius = 30;
         if (ball.x < radius) {
             ball.x = radius;
-            ball.vx = Math.abs(ball.vx);
+            ball.vx = Math.abs(ball.vx || 0.2);
         }
         if (ball.x > canvas.width - radius) {
             ball.x = canvas.width - radius;
-            ball.vx = -Math.abs(ball.vx);
+            ball.vx = -Math.abs(ball.vx || 0.2);
         }
         if (ball.y < radius) {
             ball.y = radius;
-            ball.vy = Math.abs(ball.vy);
+            ball.vy = Math.abs(ball.vy || 0.2);
         }
         if (ball.y > canvas.height - radius) {
             ball.y = canvas.height - radius;
-            ball.vy = -Math.abs(ball.vy);
+            ball.vy = -Math.abs(ball.vy || 0.2);
         }
     });
 }
 
+// ========== DRAW BALLS ==========
 function drawBalls() {
     if (!ctx || !canvas) return;
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    const radius = getBallRadius();
-    const fontSize = Math.max(14, Math.floor(radius * 0.7));
-    
     balls.forEach((ball) => {
-        // Shadow
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, 30, 0, Math.PI * 2);
+        
         ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-        ctx.shadowBlur = radius / 3;
+        ctx.shadowBlur = 10;
         ctx.shadowOffsetY = 3;
         
-        // Lingkaran
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = ball.color;
+        ctx.fillStyle = ball.color || '#E76F51';
         ctx.fill();
         
-        // Border putih
         ctx.shadowBlur = 0;
         ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = Math.max(2, Math.floor(radius / 10));
+        ctx.lineWidth = 2;
         ctx.stroke();
         
-        // Inisial
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = `bold ${fontSize}px "Inter", "Segoe UI", sans-serif`;
+        ctx.font = 'bold 16px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-        ctx.shadowBlur = radius / 5;
+        ctx.shadowBlur = 4;
         
         const initial = ball.userName ? ball.userName.charAt(0).toUpperCase() : '?';
-        ctx.fillText(initial, ball.x, ball.y - radius/5);
+        ctx.fillText(initial, ball.x, ball.y - 5);
         
-        // Username
-        ctx.font = `${Math.max(10, Math.floor(radius/3))}px "Inter", "Segoe UI", sans-serif`;
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         let displayName = ball.userName || 'anon';
         if (displayName.length > 8) {
             displayName = displayName.substring(0, 6) + '..';
         }
         
-        ctx.fillText(displayName, ball.x, ball.y + radius/1.8);
+        ctx.fillText(displayName, ball.x, ball.y + 18);
     });
     
     document.getElementById('onlineCount').textContent = balls.size;
@@ -429,26 +418,22 @@ function initEventListeners() {
     }
     
     if (canvas) {
-        // Mouse events
         canvas.addEventListener('mousedown', handleMouseDown);
         canvas.addEventListener('mousemove', handleMouseMove);
         canvas.addEventListener('mouseup', handleMouseUp);
         canvas.addEventListener('mouseleave', handleMouseUp);
         
-        // Touch events - FIX ANDROID
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         canvas.addEventListener('touchend', handleTouchEnd);
         canvas.addEventListener('touchcancel', handleTouchEnd);
         
-        // Click untuk popup - pake touchend juga
         canvas.addEventListener('click', handleCanvasClick);
-        canvas.addEventListener('touchend', handleCanvasTouch);
+        canvas.addEventListener('touchend', handleCanvasTouch); // FIX ANDROID
     }
 }
 
 function handleMouseDown(e) {
-    e.preventDefault();
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
@@ -458,9 +443,7 @@ function handleMouseDown(e) {
     const mouseX = (e.clientX - rect.left) * scaleX;
     const mouseY = (e.clientY - rect.top) * scaleY;
     
-    const radius = getBallRadius();
-    
-    // SEMUA BOLA BISA DRAG (GA ADA FILTER isMine)
+    // SEMUA BISA DRAG - urutin dari belakang biar bola atas kena duluan
     const ballsArray = Array.from(balls.entries()).reverse();
     
     for (const [id, ball] of ballsArray) {
@@ -468,7 +451,7 @@ function handleMouseDown(e) {
         const dy = mouseY - ball.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        if (distance < radius) {
+        if (distance < 30) { // HAPUS KONDISI isMine
             draggedBall = { id };
             dragOffsetX = ball.x - mouseX;
             dragOffsetY = ball.y - mouseY;
@@ -495,10 +478,8 @@ function handleMouseMove(e) {
     if (ball) {
         ball.x = mouseX + dragOffsetX;
         ball.y = mouseY + dragOffsetY;
-        
-        const radius = getBallRadius();
-        ball.x = Math.max(radius, Math.min(canvas.width - radius, ball.x));
-        ball.y = Math.max(radius, Math.min(canvas.height - radius, ball.y));
+        ball.x = Math.max(30, Math.min(canvas.width - 30, ball.x));
+        ball.y = Math.max(30, Math.min(canvas.height - 30, ball.y));
     }
 }
 
@@ -525,19 +506,16 @@ function handleMouseUp() {
 // ========== TOUCH HANDLERS - FIX ANDROID ==========
 function handleTouchStart(e) {
     e.preventDefault();
-    if (!canvas || e.touches.length === 0) return;
+    if (!canvas || e.touches.length > 1) return;
     
     const touch = e.touches[0];
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    
     const touchX = (touch.clientX - rect.left) * scaleX;
     const touchY = (touch.clientY - rect.top) * scaleY;
     
-    const radius = getBallRadius();
-    
-    // SEMUA BOLA BISA DRAG
+    // SEMUA BISA DRAG
     const ballsArray = Array.from(balls.entries()).reverse();
     
     for (const [id, ball] of ballsArray) {
@@ -545,7 +523,7 @@ function handleTouchStart(e) {
         const dy = touchY - ball.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        if (distance < radius + 5) { // +5 biar gampang di touch
+        if (distance < 35) { // HAPUS KONDISI isMine, +5 biar gampang di touch
             draggedBall = { id };
             dragOffsetX = ball.x - touchX;
             dragOffsetY = ball.y - touchY;
@@ -565,7 +543,6 @@ function handleTouchMove(e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    
     const touchX = (touch.clientX - rect.left) * scaleX;
     const touchY = (touch.clientY - rect.top) * scaleY;
     
@@ -573,10 +550,8 @@ function handleTouchMove(e) {
     if (ball) {
         ball.x = touchX + dragOffsetX;
         ball.y = touchY + dragOffsetY;
-        
-        const radius = getBallRadius();
-        ball.x = Math.max(radius, Math.min(canvas.width - radius, ball.x));
-        ball.y = Math.max(radius, Math.min(canvas.height - radius, ball.y));
+        ball.x = Math.max(30, Math.min(canvas.width - 30, ball.x));
+        ball.y = Math.max(30, Math.min(canvas.height - 30, ball.y));
     }
 }
 
@@ -602,14 +577,13 @@ function handleTouchEnd(e) {
     }
 }
 
-// ========== POPUP - FIX ANDROID ==========
+// ========== POPUP - FIX DOUBLE ==========
 function handleCanvasClick(e) {
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    
     const mouseX = (e.clientX - rect.left) * scaleX;
     const mouseY = (e.clientY - rect.top) * scaleY;
     
@@ -618,7 +592,7 @@ function handleCanvasClick(e) {
 
 function handleCanvasTouch(e) {
     e.preventDefault();
-    if (!canvas || e.touches.length > 0) return; // Skip kalo masih touch
+    if (!canvas || e.touches.length > 0) return;
     
     const touch = e.changedTouches[0];
     if (!touch) return;
@@ -626,7 +600,6 @@ function handleCanvasTouch(e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    
     const touchX = (touch.clientX - rect.left) * scaleX;
     const touchY = (touch.clientY - rect.top) * scaleY;
     
@@ -635,7 +608,7 @@ function handleCanvasTouch(e) {
 
 function showPopupAtPosition(x, y) {
     let clickedBall = null;
-    let minDistance = getBallRadius() + 10;
+    let minDistance = 40;
     
     // Cari dari bola paling atas
     const ballsArray = Array.from(balls.entries()).reverse();
@@ -657,10 +630,21 @@ function showPopupAtPosition(x, y) {
 }
 
 function showPopup(ball, x, y) {
+    // CEK JEDA 500ms BIAR GA DOUBLE
+    const now = Date.now();
+    if (now - lastPopupTime < 500) return;
+    lastPopupTime = now;
+    
     const oldPopup = document.querySelector('.bola-popup');
     if (oldPopup) oldPopup.remove();
     
+    if (popupTimeout) {
+        clearTimeout(popupTimeout);
+        popupTimeout = null;
+    }
+    
     const popup = document.createElement('div');
+    popup.className = 'bola-popup';
     popup.style.position = 'absolute';
     popup.style.backgroundColor = '#2b313f';
     popup.style.border = '2px solid #e76f51';
@@ -670,18 +654,12 @@ function showPopup(ball, x, y) {
     popup.style.zIndex = '1000';
     popup.style.boxShadow = '4px 4px 0 rgba(0,0,0,0.3)';
     popup.style.pointerEvents = 'none';
-    popup.style.color = 'white';
     
     let popupX = x + 15;
     let popupY = y - 70;
-    const containerRect = canvas.parentElement.getBoundingClientRect();
-    
-    if (popupX + 180 > containerRect.width) {
-        popupX = x - 195;
-    }
-    if (popupY < 10) {
-        popupY = y + 35;
-    }
+    const containerRect = document.querySelector('.bola-area').getBoundingClientRect();
+    if (popupX + 180 > containerRect.width) popupX = x - 195;
+    if (popupY < 10) popupY = y + 35;
     
     popup.style.left = popupX + 'px';
     popup.style.top = popupY + 'px';
@@ -693,7 +671,7 @@ function showPopup(ball, x, y) {
             <i class="fas fa-user" style="color: #ffd966;"></i>
             <span style="font-weight: 700; color: #ffd966;">${ball.userName || 'Anonim'}</span>
         </div>
-        <div style="font-size: 14px; margin-bottom: 6px;">
+        <div style="color: white; font-size: 14px; margin-bottom: 6px;">
             ${ball.message || '...'}
         </div>
         <div style="color: #9ca3af; font-size: 10px;">
@@ -701,10 +679,10 @@ function showPopup(ball, x, y) {
         </div>
     `;
     
-    canvas.parentElement.appendChild(popup);
+    document.getElementById('popupContainer').appendChild(popup);
     
-    if (popupTimeout) clearTimeout(popupTimeout);
     popupTimeout = setTimeout(() => {
         if (popup.parentNode) popup.remove();
+        popupTimeout = null;
     }, 2500);
 }
